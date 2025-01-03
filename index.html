@@ -3,40 +3,147 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login Page</title>
-    <!-- Link to Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;700&display=swap" rel="stylesheet">
+    <title>IPA to iOS Profile Converter</title>
     <style>
         body {
-            font-family: 'Noto Sans', sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-            background-color: #f4f4f9;
-        }
-        .login-container {
-            background: #fff;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            font-family: Arial, sans-serif;
             text-align: center;
-            width: 300px;
+            margin-top: 50px;
         }
-        input {
-            width: 90%;
-            padding: 10px;
-            margin: 10px 0;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 16px;
+        input[type="file"], input[type="text"], button {
+            margin-bottom: 20px;
         }
-        button {
+        .button {
             padding: 10px 20px;
-            border: none;
-            border-radius: 4px;
-            background-color: #007BFF;
+            background-color: #4CAF50;
             color: white;
-            font-size: 16px;
-            cursor: 
+            border: none;
+            cursor: pointer;
+        }
+        .button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <h1>Convert IPA to iOS Profile</h1>
+    <p>Select an IPA file to automatically extract app details and create a profile:</p>
+    
+    <!-- File Upload Input -->
+    <input type="file" id="fileInput" accept=".ipa" /><br>
+    
+    <!-- Displaying Extracted Information -->
+    <div id="appInfo" style="margin-top: 20px; display: none;">
+        <h3>Extracted App Information:</h3>
+        <p><strong>App Name:</strong> <span id="appName"></span></p>
+        <p><strong>App Identifier:</strong> <span id="appIdentifier"></span></p>
+        <p><strong>App Version:</strong> <span id="appVersion"></span></p>
+    </div>
+
+    <!-- Generate Button -->
+    <button class="button" onclick="generateProfile()" id="generateButton" style="display:none;">Generate Profile</button>
+
+    <!-- Download Link -->
+    <br><br>
+    <a id="downloadLink" href="#" style="display: none;" download="app_profile.mobileconfig">
+        <button class="button">Download Profile</button>
+    </a>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/plist/3.0.1/plist.min.js"></script>
+
+    <script>
+        document.getElementById('fileInput').addEventListener('change', handleFileSelect, false);
+
+        let extractedAppInfo = {};
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file && file.name.endsWith('.ipa')) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const arrayBuffer = e.target.result;
+                    JSZip.loadAsync(arrayBuffer).then(function(zip) {
+                        const appDirectory = 'Payload/';
+                        const appName = Object.keys(zip.files).find(name => name.startsWith(appDirectory));
+
+                        if (appName) {
+                            zip.files[appName + 'Info.plist'].async('string').then(function(plistContent) {
+                                const plistData = plist.parse(plistContent);
+                                extractedAppInfo = {
+                                    name: plistData.CFBundleName || 'Unknown App',
+                                    identifier: plistData.CFBundleIdentifier || 'Unknown Identifier',
+                                    version: plistData.CFBundleVersion || 'Unknown Version'
+                                };
+
+                                // Display extracted app info
+                                document.getElementById('appName').innerText = extractedAppInfo.name;
+                                document.getElementById('appIdentifier').innerText = extractedAppInfo.identifier;
+                                document.getElementById('appVersion').innerText = extractedAppInfo.version;
+                                document.getElementById('appInfo').style.display = 'block';
+                                document.getElementById('generateButton').style.display = 'inline-block';
+                            });
+                        } else {
+                            alert('Could not find the app directory in the IPA.');
+                        }
+                    });
+                };
+                reader.readAsArrayBuffer(file);
+            } else {
+                alert('Please select a valid IPA file.');
+            }
+        }
+
+        function generateProfile() {
+            // Get app details from extracted information
+            const { name, identifier, version } = extractedAppInfo;
+
+            // iOS Profile template
+            const iosProfile = `<?xml version="1.0" encoding="UTF-8"?>
+            <plist version="1.0">
+                <dict>
+                    <key>PayloadContent</key>
+                    <array>
+                        <dict>
+                            <key>PayloadDisplayName</key>
+                            <string>${name}</string>
+                            <key>PayloadIdentifier</key>
+                            <string>${identifier}</string>
+                            <key>PayloadType</key>
+                            <string>Application</string>
+                            <key>PayloadVersion</key>
+                            <integer>1</integer>
+                            <key>PayloadUUID</key>
+                            <string>UUID-GOES-HERE</string>
+                            <key>PayloadOrganization</key>
+                            <string>MyCompany</string>
+                            <key>PayloadRemovalDisallowed</key>
+                            <true/>
+                            <key>PayloadURL</key>
+                            <string>https://example.com/${name}.ipa</string>
+                        </dict>
+                    </array>
+                    <key>PayloadDescription</key>
+                    <string>Profile for ${name} installation</string>
+                    <key>PayloadDisplayName</key>
+                    <string>${name} Profile</string>
+                    <key>PayloadIdentifier</key>
+                    <string>com.mycompany.profile.${name}</string>
+                    <key>PayloadType</key>
+                    <string>Configuration</string>
+                    <key>PayloadVersion</key>
+                    <integer>1</integer>
+                    <key>PayloadUUID</key>
+                    <string>UUID-GOES-HERE</string>
+                </dict>
+            </plist>`;
+
+            // Create a Blob and provide the download link
+            const blob = new Blob([iosProfile], { type: 'application/xml' });
+            const downloadLink = document.getElementById('downloadLink');
+            downloadLink.href = URL.createObjectURL(blob);
+            downloadLink.style.display = 'inline';
+        }
+    </script>
+</body>
+</html>
